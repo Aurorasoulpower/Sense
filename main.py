@@ -1,162 +1,205 @@
 import cv2
 import numpy as np
 
-from camera_intrinsics import get_camera_intrinsics
 from camera import Camera
-from image_process import process_image
-from pose_solver import solve_pose, get_position, position_to_meter
+from detector import detect_light_bars
+from geometry import match_target
+from pose import solve_pose
 
+
+# ==================================================
+# 可视化：每根灯带 → 旋转矩形框 + 4 个角点
+# ==================================================
+
+def draw_light_bars(result, candidates):
+    """画出每根灯带：旋转矩形框、4 个角点、中心点。"""
+
+    for i, bar in enumerate(candidates):
+
+        corners = bar.corners.astype(int)
+        cx, cy = bar.center
+
+        # 旋转矩形框
+        cv2.drawContours(result, [corners], 0, (0, 0, 255), 2)
+
+        # 4 个角点
+        for j, (px, py) in enumerate(corners):
+            cv2.circle(result, (px, py), 4, (0, 255, 255), -1)
+            cv2.putText(
+                result,
+                f"c{j}",
+                (px + 5, py - 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 255),
+                2,
+            )
+
+        # 中心点
+        cv2.circle(result, (int(cx), int(cy)), 5, (255, 0, 0), -1)
+        cv2.putText(
+            result,
+            f"LED {i}",
+            (int(cx), int(cy)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+        )
+
+
+# ==================================================
+# 信息面板：当前目标位置 + 相对初始位置的位移
+# ==================================================
+
+def render_info_panel(pose, init_position):
+    """生成信息面板图像，每帧刷新显示位置与位移。"""
+
+    panel = np.zeros((320, 460, 3), dtype=np.uint8)
+
+    def put(text, y, color=(255, 255, 255)):
+        cv2.putText(
+            panel,
+            text,
+            (12, y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
+
+    if pose is None:
+        put("PnP: NO TARGET", 30, (0, 0, 255))
+        put("(detect two light bars)", 60, (150, 150, 150))
+        return panel
+
+    if not pose.valid:
+        put("PnP: INVALID", 30, (0, 0, 255))
+        put(f"Reproj Err: {pose.reprojection_error:.2f} px", 60, (150, 150, 150))
+        return panel
+
+    X, Y, Z = pose.position
+
+    put("Position (m):", 30, (0, 255, 0))
+    put(f"  X = {X:.3f}", 60)
+    put(f"  Y = {Y:.3f}", 90)
+    put(f"  Z = {Z:.3f}", 120)
+
+    put("Displacement (m):", 170, (0, 255, 255))
+
+    if init_position is None:
+        put("  press r to record init", 200, (150, 150, 150))
+    else:
+        dX, dY, dZ = pose.position - init_position
+        distance = float(np.linalg.norm(pose.position - init_position))
+        put(f"  dX = {dX:.3f}", 200)
+        put(f"  dY = {dY:.3f}", 230)
+        put(f"  dZ = {dZ:.3f}", 260)
+        put(f"  Distance = {distance:.3f}", 290)
+
+    return panel
+
+
+# ==================================================
+# 主流程
+# ==================================================
 
 def main():
 
-    # =========================
-    # 1. 获取相机内参
-    # =========================
-
-    K, dist = get_camera_intrinsics()
-
-
-    # =========================
-    # 2. 创建相机
-    # =========================
-
     camera = Camera()
-
     init_position = None
-
-
-    # =========================
-    # 3. 实时处理
-    # =========================
 
     while True:
 
-        # 获取一帧图像
         frame = camera.read()
-
         if frame is None:
             break
 
+        result = frame.copy()
+
 
         # =========================
-        # 4. 图像处理
+        # 1. 检测灯带
         # =========================
 
-        result, mask, target_geometry = process_image(frame)
+        candidates, mask = detect_light_bars(frame, mode="white")
 
-        position_available = False
-
-
-        if target_geometry is not None:
-
-            led1 = target_geometry["led1"]
-            led2 = target_geometry["led2"]
+        draw_light_bars(result, candidates)
 
 
-            # =========================
-            # 5. 获取 8 个图像角点
-            # =========================
+        # =========================
+        # 2. 构建目标 + 位姿解算
+        # =========================
 
-            led1_points = led1["box"]
-            led2_points = led2["box"]
+        target = match_target(candidates)
 
-            image_points = np.vstack(
-                (led1_points, led2_points)
-            ).astype(np.float32)
-
-
-            # =========================
-            # 6. PnP 空间位置解算
-            # =========================
-
-            success, rvec, tvec = solve_pose(
-                image_points,
-                K,
-                dist
+        pose = None
+        if target is not None:
+            pose = solve_pose(
+                target.image_points,
+                camera.camera_matrix,
+                camera.dist_coeffs
             )
 
 
-            if success:
-
-                # tvec 单位：mm
-                position_mm = get_position(tvec)
-
-                # mm → m
-                position = position_to_meter(
-                    position_mm
-                )
-
-                X, Y, Z = position
-                position_available = True
-
-
-                # =========================
-                # 7. 计算位移
-                # =========================
-
-                if init_position is not None:
-
-                    delta_position = (
-                        position - init_position
-                    )
-
-                    dX, dY, dZ = delta_position
-
-                    distance = float(
-                        np.linalg.norm(
-                            delta_position
-                        )
-                    )
-
-                    print(
-                        f"位置: "
-                        f"X={X:.3f} m, "
-                        f"Y={Y:.3f} m, "
-                        f"Z={Z:.3f} m | "
-                        f"位移: "
-                        f"dX={dX:.3f} m, "
-                        f"dY={dY:.3f} m, "
-                        f"dZ={dZ:.3f} m, "
-                        f"Distance={distance:.3f} m"
-                    )
-
-                else:
-
-                    print(
-                        f"目标位置: "
-                        f"X={X:.3f} m, "
-                        f"Y={Y:.3f} m, "
-                        f"Z={Z:.3f} m"
-                    )
-
-
         # =========================
-        # 8. 显示图像
+        # 3. 状态文本
         # =========================
 
-        cv2.imshow(
-            "Camera",
-            result
+        if pose is None:
+            status_text = "PnP: NO TARGET"
+            status_color = (0, 0, 255)
+        elif pose.valid:
+            status_text = (
+                f"PnP: VALID   Reproj Err: {pose.reprojection_error:.2f} px"
+            )
+            status_color = (0, 255, 0)
+        else:
+            status_text = (
+                f"PnP: INVALID   Reproj Err: {pose.reprojection_error:.2f} px"
+            )
+            status_color = (0, 0, 255)
+
+        cv2.putText(
+            result,
+            status_text,
+            (20, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            status_color,
+            2,
         )
 
 
         # =========================
-        # 9. 按键处理（每帧只取一次）
+        # 4. 信息面板（位置 + 位移，实时刷新）
+        # =========================
+
+        panel = render_info_panel(pose, init_position)
+
+
+        # =========================
+        # 5. 显示
+        # =========================
+
+        cv2.imshow("Camera", result)
+        cv2.imshow("Mask", mask)
+        cv2.imshow("Info", panel)
+
+
+        # =========================
+        # 6. 按键处理
         # =========================
 
         key = cv2.waitKey(1) & 0xFF
 
-        if key == ord("r") and position_available:
-            init_position = position.copy()
-            print("已记录初始位置")
+        if key == ord("r") and pose is not None and pose.valid:
+            init_position = pose.position.copy()
 
         if key == 27:
             break
 
-
-    # =========================
-    # 10. 释放资源
-    # =========================
 
     camera.release()
     cv2.destroyAllWindows()
