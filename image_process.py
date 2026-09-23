@@ -1,6 +1,6 @@
 import cv2
 import math
-
+import numpy as np
 
 # ==================================================
 # 灯带方向计算
@@ -30,6 +30,26 @@ def get_long_side_angle(box):
             )
 
     return best_angle
+
+# ==================================================
+# 角点排序
+# ==================================================
+
+def order_points(box):
+
+    pts = np.asarray(box, dtype=np.float32)
+
+    ordered = np.zeros((4, 2), dtype=np.float32)
+
+    s = pts.sum(axis=1)
+    d = np.diff(pts, axis=1).ravel()
+
+    ordered[0] = pts[np.argmin(s)]   # TL
+    ordered[1] = pts[np.argmin(d)]   # TR
+    ordered[2] = pts[np.argmax(s)]   # BR
+    ordered[3] = pts[np.argmax(d)]   # BL
+
+    return ordered
 
 
 # ==================================================
@@ -121,8 +141,7 @@ def process_image(img):
 
         # 获取四个角点
         box = cv2.boxPoints(rect)
-        box = box.astype(int)
-
+        box = order_points(box)
 
         candidate = {
             "contour": contour,
@@ -143,6 +162,7 @@ def process_image(img):
     for i, candidate in enumerate(candidates):
 
         box = candidate["box"]
+        box_int = box.astype(int)
 
         cx, cy = candidate["center"]
 
@@ -150,7 +170,7 @@ def process_image(img):
         # 绘制矩形
         cv2.drawContours(
             result,
-            [box],
+            [box_int],
             0,
             (0, 0, 255),
             2
@@ -180,9 +200,7 @@ def process_image(img):
 
 
         # 角点
-        for point in box:
-
-            px, py = point
+        for px, py in box_int:
 
             cv2.circle(
                 result,
@@ -202,8 +220,11 @@ def process_image(img):
 
     if len(candidates) >= 2:
 
-        led1 = candidates[0]
-        led2 = candidates[1]
+        # 按图像 x 坐标排序，保证 led1 在左、led2 在右
+        led1, led2 = sorted(
+            candidates[:2],
+            key=lambda c: c["center"][0]
+        )
 
 
         # --------------------------------------------------
@@ -255,6 +276,7 @@ def process_image(img):
             led1_angle + led2_angle
         ) / 2
 
+        
 
         # --------------------------------------------------
         # 绘制目标中心

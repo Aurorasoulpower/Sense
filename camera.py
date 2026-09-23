@@ -20,7 +20,14 @@ class Camera:
         self.pipeline.start(self.config)
 
 
-    def get_frame(self):
+    def read(self):
+        """
+        读取一帧 BGR 图像。
+
+        返回：
+            img : np.ndarray
+                获取成功返回图像，失败返回 None
+        """
 
         frames = self.pipeline.wait_for_frames()
 
@@ -36,6 +43,6 @@ class Camera:
         return img
 
 
-    def stop(self):
+    def release(self):
 
         self.pipeline.stop()
