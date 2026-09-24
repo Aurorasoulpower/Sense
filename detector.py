@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 
 # ==================================================
-# 阈值
+# 阈值宏定义
 # ==================================================
 
 RED_LOWER = (0, 100, 100)
@@ -69,22 +69,14 @@ def detect_light_bars(img, mode="white"):
     # 2. 形态学闭运算：桥接灯带沿长边的断点（白芯因 PWM 频闪略有断续）
     # --------------------------------------------------
 
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_CLOSE,
-        kernel
-    )
+    mask = cv2.morphologyEx(mask,cv2.MORPH_CLOSE,kernel)
 
 
     # --------------------------------------------------
     # 3. 寻找轮廓
     # --------------------------------------------------
 
-    contours, _ = cv2.findContours(
-        mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(mask,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
 
     # --------------------------------------------------
@@ -121,7 +113,7 @@ def detect_light_bars(img, mode="white"):
         )
 
 
-    # 最长的两根最像真灯带
+    # 降序排序，方便后续按长边优先匹配长的为灯带。
     candidates.sort(
         key=lambda bar: bar.height,
         reverse=True

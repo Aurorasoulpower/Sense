@@ -49,16 +49,14 @@ class Camera:
 
         self.camera_matrix, self.dist_coeffs = self._get_intrinsics()
 
-
+  
     def _get_intrinsics(self):
         """从已启动的彩色流中读取内参矩阵和畸变系数。"""
 
-        color_profile = self.profile.get_stream(
-            rs.stream.color
-        ).as_video_stream_profile()
+        color_profile = self.profile.get_stream(rs.stream.color).as_video_stream_profile()
 
         intrinsics = color_profile.get_intrinsics()
-
+        # 相机内参
         camera_matrix = np.array(
             [
                 [intrinsics.fx, 0.0, intrinsics.ppx],
@@ -67,7 +65,7 @@ class Camera:
             ],
             dtype=np.float32
         )
-
+        # 畸变系数
         dist_coeffs = np.asarray(
             intrinsics.coeffs,
             dtype=np.float32

@@ -6,14 +6,14 @@ from detector import LightBar
 
 
 # ==================================================
-# 阈值（可调）
+# 经验阈值
 # ==================================================
 
-LENGTH_DIFF_MAX = 0.15
-WIDTH_DIFF_MAX = 0.30
-ANGLE_DIFF_MAX = 10.0            # deg
-PERPENDICULAR_ERR_MAX = 12.0     # deg
-SIDE_RATIO_MAX = 0.20
+LENGTH_DIFF_MAX = 0.15           # 两根灯带长边最大相对误差
+WIDTH_DIFF_MAX = 0.30            # 两根灯带短边最大相对误差
+ANGLE_DIFF_MAX = 10.0            # 两根灯带长边最大方向角夹角
+PERPENDICULAR_ERR_MAX = 12.0     # 两灯带中心连线垂直长边误差
+SIDE_RATIO_MAX = 0.20            # 单灯带对边长度最大相对误差
 
 
 # ==================================================
@@ -39,7 +39,7 @@ def _normalize_angle(a):
 
 
 def _angle_diff(a, b):
-    """两条直线方向角的最小夹角（0~90°），处理 180° 周期性。"""
+    """计算夹角，两条直线方向角的最小夹角（0~90°），处理 180° 周期性。"""
     d = abs(_normalize_angle(a) - _normalize_angle(b))
     return 180.0 - d if d > 90.0 else d
 
